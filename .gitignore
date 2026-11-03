@@ -7,3 +7,4 @@ docs/
 moc_*.cpp
 aqtinstall.log
 diagnostics.log
+dist/
