@@ -1,0 +1,9 @@
+﻿# Local toolchain and build outputs
+tools/
+build/
+docs/
+
+*.o
+moc_*.cpp
+aqtinstall.log
+diagnostics.log
