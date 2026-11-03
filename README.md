@@ -16,6 +16,10 @@ two-column board; double-click or press Enter to restore and raise a window.
 - Explorer / cmd rows show full paths where readable.
 - Drag to reorder (persisted); double-click or Enter activates; auto-refresh.
 
+## Install
+
+Download the installer from Releases. It installs for the current user, adds a Start Menu shortcut (searchable from Windows Search), and offers an optional desktop shortcut.
+
 ## Build
 
 ```powershell
@@ -24,3 +28,4 @@ cmake --build build
 ```
 
 See [DESIGN.md](DESIGN.md).
+
