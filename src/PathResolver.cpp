@@ -24,7 +24,7 @@
 
 void paneDeckLog(const QString &message)
 {
-    const QString directory = QCoreApplication::applicationDirPath();
+    const QString directory = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
     QDir().mkpath(directory);
     QFile file(directory + QStringLiteral("/diagnostics.log"));
     if (file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
@@ -349,6 +349,7 @@ bool PathResolver::isConsoleClass(const QString &className)
 {
     return className == QStringLiteral("ConsoleWindowClass");
 }
+
 
 
 
