@@ -148,10 +148,12 @@ BOOL CALLBACK collectWindow(HWND hwnd, LPARAM parameter)
 {
     auto *context = reinterpret_cast<CaptureContext *>(parameter);
 
-    if (!IsWindowVisible(hwnd) || IsIconic(hwnd))
+    if (!IsWindowVisible(hwnd))
     {
         return TRUE;
     }
+
+    const bool minimized = IsIconic(hwnd) != FALSE;
 
     const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
     const LONG_PTR extendedStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
@@ -176,8 +178,9 @@ BOOL CALLBACK collectWindow(HWND hwnd, LPARAM parameter)
     }
 
     RECT rect = {};
-    if (!GetWindowRect(hwnd, &rect) || (rect.right - rect.left) < 24
-        || (rect.bottom - rect.top) < 24)
+    if (!minimized
+        && (!GetWindowRect(hwnd, &rect) || (rect.right - rect.left) < 24
+            || (rect.bottom - rect.top) < 24))
     {
         return TRUE;
     }
@@ -194,6 +197,7 @@ BOOL CALLBACK collectWindow(HWND hwnd, LPARAM parameter)
     info.processId = processId;
     info.title = title;
     info.className = cls;
+    info.minimized = minimized;
     info.executablePath = processPath(processId);
     if (!info.executablePath.isEmpty())
     {
@@ -240,6 +244,13 @@ BOOL CALLBACK collectWindow(HWND hwnd, LPARAM parameter)
         }
     }
 
+    if (minimized)
+    {
+        fprintf(stderr, "PaneDeck: minimized hwnd=%p title=%ls\n",
+                reinterpret_cast<void *>(info.handle),
+                reinterpret_cast<const wchar_t *>(info.title.utf16()));
+    }
+
     context->windows->append(info);
     return TRUE;
 }
@@ -277,6 +288,8 @@ QVector<WindowInfo> WindowEnumerator::capture()
 
     return windows;
 }
+
+
 
 
 

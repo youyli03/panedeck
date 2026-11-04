@@ -33,13 +33,15 @@ void WinEventWatcher::start()
         return;
     }
 
-    const std::array<DWORD, 6> events = {
+    const std::array<DWORD, 8> events = {
         EVENT_OBJECT_CREATE,
         EVENT_OBJECT_DESTROY,
         EVENT_OBJECT_SHOW,
         EVENT_OBJECT_HIDE,
         EVENT_OBJECT_NAMECHANGE,
         EVENT_SYSTEM_FOREGROUND,
+        EVENT_SYSTEM_MINIMIZESTART,
+        EVENT_SYSTEM_MINIMIZEEND,
     };
 
     for (const DWORD event : events)
@@ -86,3 +88,4 @@ void WinEventWatcher::scheduleRefresh()
         m_debounce->start();
     }
 }
+
