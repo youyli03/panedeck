@@ -15,7 +15,7 @@ two-column board; double-click or press Enter to restore and raise a window.
 - Taskbar icons, English static UI, light theme.
 - Explorer / cmd rows show full paths where readable.
 - Includes minimized windows; double-click or Enter restores and raises them.
-- Drag to reorder (persisted); double-click or Enter activates; auto-refresh.
+- Drag to reorder (persisted); double-click or Enter activates; filtered and throttled auto-refresh.
 
 ## Install
 
@@ -29,5 +29,6 @@ cmake --build build
 ```
 
 See [DESIGN.md](DESIGN.md).
+
 
 

@@ -58,6 +58,7 @@ raise the target window.
   NAMECHANGE / FOREGROUND) with a 250 ms debounce triggers a full rescan; items
   are merged by identity so order, selection, and scroll position are preserved.
   Refresh also runs on startup, panel show/restore, and system resume. No polling.
+  Events from the dashboard's own process, non-top-level objects, untitled windows, and foreground-only changes are ignored; refreshes are throttled to 750 ms to prevent event storms from consuming CPU.
   F5 is a hidden fallback.
 
 ## 5. Visual
@@ -119,6 +120,7 @@ raise the target window.
 
 1. Should the toolbar also offer sorting/settings beyond `All` and >10-window
    applications?
+
 
 
 
