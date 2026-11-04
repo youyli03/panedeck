@@ -223,7 +223,6 @@ BOOL CALLBACK collectWindow(HWND hwnd, LPARAM parameter)
     else if (PathResolver::isConsoleClass(cls))
     {
         info.path = context->resolver->consoleWorkingDirectory(processId);
-        paneDeckLog(QStringLiteral("console pid=%1 cwd=%2").arg(processId).arg(info.path));
     }
 
     info.identityKey =
@@ -242,13 +241,6 @@ BOOL CALLBACK collectWindow(HWND hwnd, LPARAM parameter)
         {
             info.icon = iterator.value();
         }
-    }
-
-    if (minimized)
-    {
-        fprintf(stderr, "PaneDeck: minimized hwnd=%p title=%ls\n",
-                reinterpret_cast<void *>(info.handle),
-                reinterpret_cast<const wchar_t *>(info.title.utf16()));
     }
 
     context->windows->append(info);
@@ -273,21 +265,9 @@ QVector<WindowInfo> WindowEnumerator::capture()
 
     EnumWindows(collectWindow, reinterpret_cast<LPARAM>(&context));
 
-    fprintf(stderr, "PaneDeck: captured %d windows\n", static_cast<int>(windows.size()));
-    for (const WindowInfo &window : windows)
-    {
-        if (!window.path.isEmpty() || window.className == QStringLiteral("CabinetWClass"))
-        {
-            fprintf(stderr, "PaneDeck: hwnd=%p class=%ls title=%ls path=%ls\n",
-                    reinterpret_cast<void *>(window.handle),
-                    reinterpret_cast<const wchar_t *>(window.className.utf16()),
-                    reinterpret_cast<const wchar_t *>(window.title.utf16()),
-                    reinterpret_cast<const wchar_t *>(window.path.utf16()));
-        }
-    }
-
     return windows;
 }
+
 
 
 

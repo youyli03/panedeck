@@ -2,6 +2,7 @@
 
 #include "DashboardView.h"
 
+#include <QElapsedTimer>
 #include <QMainWindow>
 #include <QStringList>
 #include <QVector>
@@ -10,6 +11,7 @@ class QHBoxLayout;
 class QLabel;
 class QPushButton;
 class QButtonGroup;
+class QTimer;
 class WinEventWatcher;
 class SettingsStore;
 
@@ -50,5 +52,9 @@ private:
     QString m_filterKey;
     QVector<QPushButton *> m_tabButtons;
     bool m_refreshing = false;
+    QElapsedTimer m_lastRefresh;
+    QTimer *m_refreshTimer = nullptr;
+    bool m_refreshPending = false;
 };
+
 

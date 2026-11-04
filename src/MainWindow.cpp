@@ -15,6 +15,7 @@
 #include <QScrollBar>
 #include <QShortcut>
 #include <QStatusBar>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -25,6 +26,7 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_watcher(new WinEventWatcher(this))
     , m_settings(new SettingsStore())
+    , m_refreshTimer(new QTimer(this))
 {
     setWindowTitle(QStringLiteral("PaneDeck"));
     resize(1280, 800);
@@ -71,6 +73,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_watcher, &WinEventWatcher::windowActivity, this, &MainWindow::refresh);
     m_watcher->start();
 
+    m_refreshTimer->setSingleShot(true);
+    m_refreshTimer->setInterval(750);
+    connect(m_refreshTimer, &QTimer::timeout, this, &MainWindow::refresh);
+
     auto *refreshShortcut = new QShortcut(QKeySequence(Qt::Key_F5), this);
     connect(refreshShortcut, &QShortcut::activated, this, &MainWindow::refresh);
 }
@@ -93,6 +99,18 @@ void MainWindow::refresh()
         return;
     }
 
+    if (m_lastRefresh.isValid() && m_lastRefresh.elapsed() < 750)
+    {
+        m_refreshPending = true;
+        if (!m_refreshTimer->isActive())
+        {
+            m_refreshTimer->start();
+        }
+        return;
+    }
+
+    m_lastRefresh.start();
+    m_refreshPending = false;
     m_refreshing = true;
 
     WindowEnumerator enumerator;
@@ -301,6 +319,10 @@ void MainWindow::updateStatus(int windowCount, int appCount)
                               .arg(windowCount)
                               .arg(appCount));
 }
+
+
+
+
 
 
 

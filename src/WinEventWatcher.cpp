@@ -68,19 +68,50 @@ void CALLBACK WinEventWatcher::onWinEvent(HWINEVENTHOOK hook, DWORD event, HWND 
                                           LONG child, DWORD thread, DWORD time)
 {
     Q_UNUSED(hook);
-    Q_UNUSED(event);
-    Q_UNUSED(hwnd);
-    Q_UNUSED(object);
-    Q_UNUSED(child);
     Q_UNUSED(thread);
     Q_UNUSED(time);
+
+    if (hwnd == nullptr)
+    {
+        return;
+    }
+
+    if (event >= EVENT_OBJECT_CREATE && event <= EVENT_OBJECT_NAMECHANGE
+        && (object != OBJID_WINDOW || child != CHILDID_SELF))
+    {
+        return;
+    }
+
+    // Foreground changes do not modify the window set, and OBJECT_CREATE is
+    // followed by OBJECT_SHOW for windows that actually become visible.
+    if (event == EVENT_SYSTEM_FOREGROUND || event == EVENT_OBJECT_CREATE)
+    {
+        return;
+    }
+
+    DWORD processId = 0;
+    GetWindowThreadProcessId(hwnd, &processId);
+    if (processId == 0 || processId == GetCurrentProcessId())
+    {
+        return;
+    }
+
+    if (event != EVENT_OBJECT_HIDE && event != EVENT_OBJECT_DESTROY
+        && !IsWindowVisible(hwnd))
+    {
+        return;
+    }
+
+    if (GetWindowTextLengthW(hwnd) == 0)
+    {
+        return;
+    }
 
     if (s_instance != nullptr)
     {
         s_instance->scheduleRefresh();
     }
 }
-
 void WinEventWatcher::scheduleRefresh()
 {
     if (m_debounce != nullptr)
@@ -88,4 +119,8 @@ void WinEventWatcher::scheduleRefresh()
         m_debounce->start();
     }
 }
+
+
+
+
 

@@ -137,17 +137,12 @@ void PathResolver::refreshExplorerPaths()
     const HRESULT createResult = CoCreateInstance(kShellWindowsClsid, nullptr, CLSCTX_ALL,
                                                   kShellWindowsIid,
                                                   reinterpret_cast<void **>(&shellWindows));
-    paneDeckLog(QStringLiteral("ShellWindows hr=0x%1")
-                    .arg(static_cast<unsigned long>(createResult), 8, 16, QLatin1Char('0')));
-    fprintf(stderr, "PathResolver: CoCreateInstance hr=0x%08lx shell=%p\n",
-            static_cast<unsigned long>(createResult), static_cast<void *>(shellWindows));
     if (FAILED(createResult) || shellWindows == nullptr)
     {
         return;
     }
 
     long count = 0;
-    fprintf(stderr, "PathResolver: shell count=%ld\n", count);
     if (SUCCEEDED(shellWindows->get_Count(&count)))
     {
         for (long index = 0; index < count; ++index)
@@ -177,10 +172,6 @@ void PathResolver::refreshExplorerPaths()
                         const QString path =
                             urlToLocalPath(QString::fromWCharArray(locationUrl,
                                                                   SysStringLen(locationUrl)));
-                        fprintf(stderr, "PathResolver: hwnd=%p url=%ls path=%ls\n",
-                                reinterpret_cast<void *>(handleValue),
-                                locationUrl,
-                                reinterpret_cast<const wchar_t *>(path.utf16()));
                         if (!path.isEmpty())
                         {
                             m_explorerPaths.insert(static_cast<WId>(handleValue), path);
@@ -276,10 +267,6 @@ QString PathResolver::consoleWorkingDirectory(DWORD processId) const
     {
         process = OpenProcess(kProcessQueryLimitedInformation | kProcessVmRead, FALSE, processId);
     }
-    paneDeckLog(QStringLiteral("console open pid=%1 handle=%2 error=%3")
-                    .arg(processId)
-                    .arg(reinterpret_cast<quintptr>(process))
-                    .arg(GetLastError()));
     if (process == nullptr)
     {
         return {};
@@ -349,6 +336,8 @@ bool PathResolver::isConsoleClass(const QString &className)
 {
     return className == QStringLiteral("ConsoleWindowClass");
 }
+
+
 
 
 
