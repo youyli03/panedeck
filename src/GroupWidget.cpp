@@ -1,7 +1,9 @@
 ﻿#include "GroupWidget.h"
 
 #include <QFontMetrics>
+#include <QHelpEvent>
 #include <QKeyEvent>
+#include <QToolTip>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -290,6 +292,27 @@ void GroupWidget::mouseDoubleClickEvent(QMouseEvent *event)
     }
 }
 
+bool GroupWidget::event(QEvent *event)
+{
+    if (event->type() == QEvent::ToolTip)
+    {
+        auto *helpEvent = static_cast<QHelpEvent *>(event);
+        const int row = rowAt(helpEvent->pos());
+        if (row >= 0 && row < m_windows.size() && !m_windows.at(row).path.isEmpty())
+        {
+            QToolTip::showText(helpEvent->globalPos(), m_windows.at(row).path, this);
+        }
+        else
+        {
+            QToolTip::hideText();
+            event->ignore();
+        }
+        return true;
+    }
+
+    return QWidget::event(event);
+}
+
 void GroupWidget::keyPressEvent(QKeyEvent *event)
 {
     if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)
@@ -319,5 +342,6 @@ void GroupWidget::moveRow(int from, int to)
     m_windows.move(from, to);
     update();
 }
+
 
 

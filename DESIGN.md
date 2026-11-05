@@ -45,7 +45,7 @@ raise the target window.
 - File Explorer: full folder path in small gray text after the title.
 - cmd / console: full working directory after the title.
 - Other applications: title only; the application name is in the group header.
-- Long paths are elided in the middle; the full value is available.
+- Long paths are elided in the middle; hovering a row shows the full path in a tooltip.
 
 ## 4. Interaction
 
@@ -120,6 +120,7 @@ raise the target window.
 
 1. Should the toolbar also offer sorting/settings beyond `All` and >10-window
    applications?
+
 
 
 
