@@ -17,7 +17,6 @@ struct WindowGroup
     QString title;
     QIcon icon;
     QVector<WindowInfo> windows;
-    bool caseGroup = false;
 };
 
 /// Two-column scrollable board of application groups.
@@ -46,5 +45,6 @@ private:
     QVBoxLayout *m_rightColumn = nullptr;
     QVector<GroupWidget *> m_groupWidgets;
 };
+
 
 

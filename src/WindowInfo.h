@@ -16,6 +16,8 @@ struct WindowInfo
     QString applicationName;
     QString path;
     QString identityKey;
+    QString sectionTitle;
     QIcon icon;
     bool minimized = false;
 };
+

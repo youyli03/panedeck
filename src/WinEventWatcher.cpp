@@ -82,9 +82,8 @@ void CALLBACK WinEventWatcher::onWinEvent(HWINEVENTHOOK hook, DWORD event, HWND 
         return;
     }
 
-    // Foreground changes do not modify the window set, and OBJECT_CREATE is
-    // followed by OBJECT_SHOW for windows that actually become visible.
-    if (event == EVENT_SYSTEM_FOREGROUND || event == EVENT_OBJECT_CREATE)
+    // Foreground changes do not modify the window set.
+    if (event == EVENT_SYSTEM_FOREGROUND)
     {
         return;
     }
@@ -96,13 +95,13 @@ void CALLBACK WinEventWatcher::onWinEvent(HWINEVENTHOOK hook, DWORD event, HWND 
         return;
     }
 
-    if (event != EVENT_OBJECT_HIDE && event != EVENT_OBJECT_DESTROY
-        && !IsWindowVisible(hwnd))
+    if (event != EVENT_OBJECT_CREATE && event != EVENT_OBJECT_DESTROY
+        && event != EVENT_OBJECT_HIDE && !IsWindowVisible(hwnd))
     {
         return;
     }
 
-    if (GetWindowTextLengthW(hwnd) == 0)
+    if (event == EVENT_OBJECT_NAMECHANGE && GetWindowTextLengthW(hwnd) == 0)
     {
         return;
     }
@@ -119,6 +118,7 @@ void WinEventWatcher::scheduleRefresh()
         m_debounce->start();
     }
 }
+
 
 
 

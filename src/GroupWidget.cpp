@@ -128,6 +128,16 @@ void GroupWidget::paintEvent(QPaintEvent *event)
     {
         const WindowInfo &window = m_windows.at(row);
         const int rowY = kHeaderHeight + row * kRowHeight;
+        const QString &section = window.sectionTitle;
+        const QString previousSection =
+            row > 0 ? m_windows.at(row - 1).sectionTitle : QString();
+        const bool sectionChanged = row > 0 && section != previousSection
+            && (!section.isEmpty() || !previousSection.isEmpty());
+        if (sectionChanged)
+        {
+            painter.setPen(QPen(QColor(QStringLiteral("#CDD3DB")), 2.0));
+            painter.drawLine(kTextLeft, rowY, width() - 14, rowY);
+        }
         const QRectF rowRect(6, rowY + 1, width() - 12, kRowHeight - 2);
 
         if (row == m_selectedRow)
@@ -342,6 +352,8 @@ void GroupWidget::moveRow(int from, int to)
     m_windows.move(from, to);
     update();
 }
+
+
 
 
 
