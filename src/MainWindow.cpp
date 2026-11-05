@@ -8,6 +8,7 @@
 #include <QApplication>
 #include <QButtonGroup>
 #include <QHash>
+#include <QRegularExpression>
 #include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
@@ -131,6 +132,81 @@ void MainWindow::refresh()
     m_refreshing = false;
 }
 
+namespace
+{
+bool isDigits(const QString &value)
+{
+    if (value.isEmpty())
+    {
+        return false;
+    }
+
+    for (const QChar character : value)
+    {
+        if (!character.isDigit())
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool looksLikeDateSegment(const QString &value)
+{
+    if (value.size() == 8)
+    {
+        const int year = value.left(4).toInt();
+        const int month = value.mid(4, 2).toInt();
+        const int day = value.mid(6, 2).toInt();
+        return year >= 1990 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31;
+    }
+
+    if (value.size() == 6)
+    {
+        const int year = value.left(4).toInt();
+        const int month = value.mid(4, 2).toInt();
+        return year >= 1990 && year <= 2100 && month >= 1 && month <= 12;
+    }
+
+    return false;
+}
+
+QString caseIdFromPath(const QString &path)
+{
+    const QStringList segments = path.split(QRegularExpression(QStringLiteral("[\\\\/]")),
+                                            Qt::SkipEmptyParts);
+    QString best;
+    int bestScore = -1;
+
+    for (int index = 0; index < segments.size(); ++index)
+    {
+        const QString &segment = segments.at(index);
+        if (segment.size() < 6 || segment.size() > 8 || !isDigits(segment))
+        {
+            continue;
+        }
+
+        const bool parentIsCase = index > 0
+            && (segments.at(index - 1).compare(QStringLiteral("case"), Qt::CaseInsensitive) == 0
+                || segments.at(index - 1).compare(QStringLiteral("cases"), Qt::CaseInsensitive) == 0);
+
+        if (!parentIsCase && looksLikeDateSegment(segment))
+        {
+            continue;
+        }
+
+        const int score = (parentIsCase ? 1000 : 0) + segment.size() * 10 + (8 - index);
+        if (score > bestScore)
+        {
+            best = segment;
+            bestScore = score;
+        }
+    }
+
+    return best;
+}
+}
+
 QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows) const
 {
     QVector<WindowGroup> groups;
@@ -138,17 +214,38 @@ QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows)
 
     for (const WindowInfo &window : windows)
     {
-        const QString key = window.executablePath.isEmpty()
-            ? window.applicationName
-            : window.executablePath;
+        QString key;
+        QString title;
+        bool caseGroup = false;
+
+        const bool isExplorer = window.className == QStringLiteral("CabinetWClass")
+            || window.className == QStringLiteral("ExploreWClass");
+
+        if (isExplorer && !window.path.isEmpty())
+        {
+            const QString caseId = caseIdFromPath(window.path);
+            if (!caseId.isEmpty())
+            {
+                key = QStringLiteral("case:") + caseId;
+                title = caseId;
+                caseGroup = true;
+            }
+        }
+
+        if (key.isEmpty())
+        {
+            key = window.executablePath.isEmpty() ? window.applicationName : window.executablePath;
+            title = window.applicationName;
+        }
 
         auto iterator = indexByKey.find(key);
         if (iterator == indexByKey.end())
         {
             WindowGroup group;
             group.key = key;
-            group.title = window.applicationName;
+            group.title = title;
             group.icon = window.icon;
+            group.caseGroup = caseGroup;
             indexByKey.insert(key, groups.size());
             groups.append(group);
             iterator = indexByKey.find(key);
@@ -196,6 +293,14 @@ QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows)
     std::sort(groups.begin(), groups.end(),
               [](const WindowGroup &left, const WindowGroup &right)
               {
+                  if (left.caseGroup != right.caseGroup)
+                  {
+                      return left.caseGroup;
+                  }
+                  if (left.caseGroup)
+                  {
+                      return left.title.toLongLong() < right.title.toLongLong();
+                  }
                   if (left.windows.size() != right.windows.size())
                   {
                       return left.windows.size() > right.windows.size();
@@ -205,7 +310,6 @@ QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows)
 
     return groups;
 }
-
 void MainWindow::saveWindowOrder(const QVector<WindowGroup> &groups)
 {
     for (const WindowGroup &group : groups)
@@ -319,6 +423,7 @@ void MainWindow::updateStatus(int windowCount, int appCount)
                               .arg(windowCount)
                               .arg(appCount));
 }
+
 
 
 

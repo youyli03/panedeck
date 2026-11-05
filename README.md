@@ -9,7 +9,7 @@ two-column board; double-click or press Enter to restore and raise a window.
 
 ## Features
 
-- One group per application; no categories.
+- One group per application; no categories. Explorer windows group by a 6-8 digit case folder in their path.
 - Top tabs: `All` plus applications with more than 10 windows.
 - Bordered group boxes; no scrollbar (overflow is clipped).
 - Taskbar icons, English static UI, light theme.
@@ -29,6 +29,7 @@ cmake --build build
 ```
 
 See [DESIGN.md](DESIGN.md).
+
 
 
 
