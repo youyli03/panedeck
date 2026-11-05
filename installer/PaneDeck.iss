@@ -1,5 +1,5 @@
-﻿#define MyAppName "PaneDeck"
-#define MyAppVersion "0.2.0"
+#define MyAppName "PaneDeck"
+#define MyAppVersion "0.3.0"
 #define MyAppPublisher "youyli03"
 #define MyAppURL "https://github.com/youyli03/panedeck"
 #define MyAppExeName "PaneDeck.exe"
@@ -19,7 +19,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\dist
-OutputBaseFilename=PaneDeck-0.2.0-beta-setup
+OutputBaseFilename=PaneDeck-0.3.0-beta-setup
 SetupIconFile=..\resources\panedeck.ico
 Compression=lzma2
 SolidCompression=yes
@@ -28,7 +28,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
-VersionInfoVersion=0.2.0.0
+VersionInfoVersion=0.3.0.0
 VersionInfoDescription=PaneDeck installer
 
 [Languages]
@@ -38,7 +38,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 
 [Files]
-Source: "..\dist\PaneDeck-0.2.0-beta-win64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\PaneDeck-0.3.0-beta-win64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Comment: "All your windows, one deck"

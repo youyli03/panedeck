@@ -1,15 +1,18 @@
 ﻿#include "MainWindow.h"
 
 #include "ActivationService.h"
+#include "GroupWidget.h"
+#include "PathClassifier.h"
 #include "SettingsStore.h"
 #include "WindowEnumerator.h"
 #include "WinEventWatcher.h"
 
 #include <QApplication>
 #include <QButtonGroup>
+#include <QEvent>
 #include <QHash>
-#include <QRegularExpression>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
 #include <QPushButton>
@@ -63,7 +66,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_statusLeft = new QLabel(this);
     m_statusLeft->setStyleSheet(QStringLiteral("color: #5F6368; font-size: 11px;"));
     m_statusRight = new QLabel(
-        QStringLiteral("Drag to reorder · Double-click / Enter to activate"), this);
+        QStringLiteral("Drag to reorder · ↑↓ select · Double-click / Enter to activate"), this);
     m_statusRight->setStyleSheet(QStringLiteral("color: #5F6368; font-size: 11px;"));
     statusBar()->setSizeGripEnabled(false);
     statusBar()->setStyleSheet(
@@ -80,6 +83,10 @@ MainWindow::MainWindow(QWidget *parent)
 
     auto *refreshShortcut = new QShortcut(QKeySequence(Qt::Key_F5), this);
     connect(refreshShortcut, &QShortcut::activated, this, &MainWindow::refresh);
+
+    // Arrow keys should always drive the board, even if a tab button or the
+    // window itself took focus.
+    qApp->installEventFilter(this);
 }
 
 MainWindow::~MainWindow()
@@ -91,12 +98,54 @@ void MainWindow::showEvent(QShowEvent *event)
 {
     QMainWindow::showEvent(event);
     refresh();
+    // Focus only works once the window is actually visible.
+    QTimer::singleShot(0, this, [this]() { m_dashboard->focusSelectedGroup(); });
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event->type() == QEvent::KeyPress && isActiveWindow())
+    {
+        auto *keyEvent = static_cast<QKeyEvent *>(event);
+        const int key = keyEvent->key();
+        const bool navigationKey = key == Qt::Key_Up || key == Qt::Key_Down
+            || key == Qt::Key_Home || key == Qt::Key_End;
+        if (navigationKey && keyEvent->modifiers() == Qt::NoModifier)
+        {
+            QWidget *focus = QApplication::focusWidget();
+            if (qobject_cast<GroupWidget *>(focus) == nullptr
+                && (focus == nullptr || isAncestorOf(focus)))
+            {
+                m_dashboard->focusSelectedGroup();
+                QWidget *target = QApplication::focusWidget();
+                if (target != nullptr && target != focus)
+                {
+                    QApplication::sendEvent(target, keyEvent);
+                    return true;
+                }
+            }
+        }
+    }
+
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::refresh()
 {
     if (m_refreshing)
     {
+        return;
+    }
+
+    // Never rebuild the board in the middle of a click/drag: the widget under
+    // the cursor would be deleted and the mouse release would be lost.
+    if (QApplication::mouseButtons() != Qt::NoButton && isActiveWindow())
+    {
+        m_refreshPending = true;
+        if (!m_refreshTimer->isActive())
+        {
+            m_refreshTimer->start();
+        }
         return;
     }
 
@@ -134,111 +183,6 @@ void MainWindow::refresh()
 
 namespace
 {
-bool isDigits(const QString &value)
-{
-    if (value.isEmpty())
-    {
-        return false;
-    }
-
-    for (const QChar character : value)
-    {
-        if (!character.isDigit())
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool looksLikeDateSegment(const QString &value)
-{
-    if (value.size() == 8)
-    {
-        const int year = value.left(4).toInt();
-        const int month = value.mid(4, 2).toInt();
-        const int day = value.mid(6, 2).toInt();
-        return year >= 1990 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31;
-    }
-
-    if (value.size() == 6)
-    {
-        const int year = value.left(4).toInt();
-        const int month = value.mid(4, 2).toInt();
-        return year >= 1990 && year <= 2100 && month >= 1 && month <= 12;
-    }
-
-    return false;
-}
-
-QString normalizedPath(const QString &path)
-{
-    QString normalized = path;
-    normalized.replace(QLatin1Char('/'), QLatin1Char('\\'));
-    return normalized;
-}
-
-QString caseIdFromPath(const QString &path)
-{
-    const QStringList segments = path.split(QRegularExpression(QStringLiteral("[\\\\/]")),
-                                            Qt::SkipEmptyParts);
-    QString best;
-    int bestScore = -1;
-
-    for (int index = 0; index < segments.size(); ++index)
-    {
-        const QString &segment = segments.at(index);
-        if (segment.size() < 6 || segment.size() > 8 || !isDigits(segment))
-        {
-            continue;
-        }
-
-        const bool parentIsCase = index > 0
-            && (segments.at(index - 1).compare(QStringLiteral("case"), Qt::CaseInsensitive) == 0
-                || segments.at(index - 1).compare(QStringLiteral("cases"), Qt::CaseInsensitive) == 0);
-
-        if (!parentIsCase && looksLikeDateSegment(segment))
-        {
-            continue;
-        }
-
-        const int score = (parentIsCase ? 1000 : 0) + segment.size() * 10 + (8 - index);
-        if (score > bestScore)
-        {
-            best = segment;
-            bestScore = score;
-        }
-    }
-
-    return best;
-}
-
-QString pathPrefix(const QString &path)
-{
-    const QString normalized = normalizedPath(path);
-    const QStringList segments = normalized.split(QLatin1Char('\\'), Qt::SkipEmptyParts);
-    if (segments.size() < 2)
-    {
-        return {};
-    }
-
-    QString prefix;
-    if (normalized.startsWith(QStringLiteral("\\\\")))
-    {
-        prefix = QStringLiteral("\\\\") + segments.at(0) + QLatin1Char('\\') + segments.at(1);
-        if (segments.size() >= 3)
-        {
-            prefix += QLatin1Char('\\') + segments.at(2);
-        }
-    }
-    else
-    {
-        prefix = segments.at(0) + QLatin1Char('\\') + segments.at(1);
-    }
-
-    return prefix.toLower();
-}
-
 bool sectionLess(const WindowInfo &left, const WindowInfo &right)
 {
     if (left.sectionKey != right.sectionKey)
@@ -254,80 +198,73 @@ bool sectionLess(const WindowInfo &left, const WindowInfo &right)
         return left.sectionKey < right.sectionKey;
     }
 
+    // Case sections pair windows from different roots, so order them by the
+    // folder that contains the case; plain sections share that folder already.
+    if (left.sortPath.isEmpty() != right.sortPath.isEmpty())
+    {
+        return !left.sortPath.isEmpty();
+    }
+
+    const int pathOrder = QString::compare(left.sortPath, right.sortPath, Qt::CaseInsensitive);
+    if (pathOrder != 0)
+    {
+        return pathOrder < 0;
+    }
+
     return QString::localeAwareCompare(left.title, right.title) < 0;
 }
 }
 
 QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows) const
 {
-    QHash<QString, int> caseCounts;
-    QHash<QString, int> prefixCounts;
-
     const auto isExplorer = [](const WindowInfo &window)
     {
         return window.className == QStringLiteral("CabinetWClass")
             || window.className == QStringLiteral("ExploreWClass");
     };
 
-    for (const WindowInfo &window : windows)
+    QVector<ExplorerPathInfo> explorerPaths;
+    QVector<int> explorerIndices;
+    for (int index = 0; index < windows.size(); ++index)
     {
-        if (!isExplorer(window) || window.path.isEmpty())
-        {
-            continue;
-        }
-
-        const QString caseId = caseIdFromPath(window.path);
-        if (!caseId.isEmpty())
-        {
-            caseCounts[caseId] += 1;
-        }
-    }
-
-    for (const WindowInfo &window : windows)
-    {
-        if (!isExplorer(window) || window.path.isEmpty())
-        {
-            continue;
-        }
-
-        const QString caseId = caseIdFromPath(window.path);
-        if (!caseId.isEmpty() && caseCounts.value(caseId) > 1)
-        {
-            continue;
-        }
-
-        const QString prefix = pathPrefix(window.path);
-        if (!prefix.isEmpty())
-        {
-            prefixCounts[prefix] += 1;
-        }
-    }
-
-    QVector<WindowInfo> entries;
-    entries.reserve(windows.size());
-
-    for (const WindowInfo &window : windows)
-    {
-        WindowInfo entry = window;
-
+        const WindowInfo &window = windows.at(index);
         if (isExplorer(window) && !window.path.isEmpty())
         {
-            const QString caseId = caseIdFromPath(window.path);
-            if (!caseId.isEmpty() && caseCounts.value(caseId) > 1)
-            {
-                entry.sectionKey = QStringLiteral("C") + caseId.rightJustified(8, QLatin1Char('0'));
-            }
-            else
-            {
-                const QString prefix = pathPrefix(window.path);
-                if (!prefix.isEmpty() && prefixCounts.value(prefix) > 1)
-                {
-                    entry.sectionKey = QStringLiteral("P") + prefix;
-                }
-            }
+            ExplorerPathInfo info;
+            info.title = window.title;
+            info.path = window.path;
+            explorerPaths.append(info);
+            explorerIndices.append(index);
         }
+    }
 
-        entries.append(entry);
+    const QVector<PathGrouping> groupings = PathClassifier::classify(explorerPaths);
+
+    QVector<WindowInfo> entries(windows.size());
+    for (int index = 0; index < windows.size(); ++index)
+    {
+        entries[index] = windows.at(index);
+    }
+
+    for (int index = 0; index < groupings.size(); ++index)
+    {
+        const PathGrouping &grouping = groupings.at(index);
+        WindowInfo &entry = entries[explorerIndices.at(index)];
+        entry.path = grouping.normalizedPath;
+        entry.pathLabel = grouping.pathLabel;
+        entry.sortPath = grouping.sortPath;
+        entry.sectionKey = grouping.sectionKey;
+        entry.sectionLabel = grouping.sectionLabel;
+    }
+
+    // Consoles keep their working directory after the title; only Explorer
+    // rows get the leaf/parent pairing above.
+    for (WindowInfo &entry : entries)
+    {
+        if (!entry.path.isEmpty() && !isExplorer(entry))
+        {
+            entry.pathLabel = PathClassifier::normalize(entry.path);
+        }
     }
 
     QVector<WindowGroup> groups;
@@ -390,6 +327,12 @@ QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows)
                                      {
                                          return leftRank < rightRank;
                                      }
+                                     if (leftRank == INT_MAX)
+                                     {
+                                         // Both are new: keep the section/path
+                                         // order produced above.
+                                         return false;
+                                     }
                                      return QString::localeAwareCompare(left.title, right.title) < 0;
                                  });
 
@@ -430,6 +373,7 @@ void MainWindow::saveWindowOrder(const QVector<WindowGroup> &groups)
 
 void MainWindow::rebuildTabs()
 {
+    bool filterCleared = false;
     if (!m_filterKey.isEmpty())
     {
         bool stillAvailable = false;
@@ -444,8 +388,28 @@ void MainWindow::rebuildTabs()
         if (!stillAvailable)
         {
             m_filterKey.clear();
+            filterCleared = true;
         }
     }
+
+    // Recreating the buttons on every 750 ms refresh also destroys keyboard
+    // focus on the tab strip; only rebuild when the set or labels changed.
+    QStringList signature;
+    signature.append(QStringLiteral("All"));
+    for (const WindowGroup &group : m_groups)
+    {
+        if (group.windows.size() > 10)
+        {
+            signature.append(group.key + QChar(0x1f) + group.title + QChar(0x1f)
+                             + QString::number(group.windows.size()));
+        }
+    }
+
+    if (!filterCleared && signature == m_tabSignature)
+    {
+        return;
+    }
+    m_tabSignature = signature;
 
     m_tabGroup->blockSignals(true);
     for (QPushButton *button : m_tabButtons)
@@ -469,7 +433,13 @@ void MainWindow::rebuildTabs()
             " border-bottom: 2px solid #B26B1F; font-weight: 600; }"));
         m_tabGroup->addButton(button);
         m_tabLayout->insertWidget(m_tabLayout->count() - 1, button);
-        connect(button, &QPushButton::clicked, this, [this, key]() { applyFilter(key); });
+        connect(button, &QPushButton::clicked, this,
+                [this, key]()
+                {
+                    applyFilter(key);
+                    // Keep arrow-key navigation alive after choosing a tab.
+                    m_dashboard->focusSelectedGroup();
+                });
         m_tabButtons.append(button);
     };
 
@@ -510,7 +480,9 @@ void MainWindow::applyFilter(const QString &key)
 void MainWindow::onWindowActivated(quintptr handle)
 {
     ActivationService::activate(static_cast<WId>(handle));
-    m_dashboard->setFocus();
+    // Keep focus on the rows (not the scroll area) so returning to PaneDeck
+    // with the keyboard still works.
+    m_dashboard->focusSelectedGroup();
 }
 
 void MainWindow::onOrderChanged(const QString &applicationKey, const QStringList &identityOrder)

@@ -225,8 +225,11 @@ BOOL CALLBACK collectWindow(HWND hwnd, LPARAM parameter)
         info.path = context->resolver->consoleWorkingDirectory(processId);
     }
 
+    // Persisted order identity: folder windows are identified by their folder
+    // path, not by their (often repeated or mutable) title.
+    const QString identitySubject = info.path.isEmpty() ? info.title : info.path;
     info.identityKey =
-        info.executablePath + QLatin1Char('|') + cls + QLatin1Char('|') + info.title;
+        info.executablePath + QLatin1Char('|') + cls + QLatin1Char('|') + identitySubject;
 
     if (!info.executablePath.isEmpty())
     {

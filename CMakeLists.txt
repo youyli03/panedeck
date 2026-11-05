@@ -1,6 +1,6 @@
-﻿cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.21)
 
-project(PaneDeck VERSION 0.1 LANGUAGES CXX)
+project(PaneDeck VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,6 +21,8 @@ qt_add_executable(PaneDeck WIN32
     src/WindowEnumerator.cpp
     src/WindowEnumerator.h
     src/WindowInfo.h
+    src/PathClassifier.cpp
+    src/PathClassifier.h
     src/PathResolver.cpp
     src/PathResolver.h
     src/ActivationService.cpp
@@ -51,6 +53,21 @@ target_link_libraries(PaneDeck PRIVATE
     user32
     gdi32
     shell32
+    version
 )
+
+option(PANEDECK_BUILD_TESTS "Build the path classification tests" OFF)
+
+if (PANEDECK_BUILD_TESTS)
+    enable_testing()
+    add_executable(PaneDeckClassificationTest
+        tests/classification_test.cpp
+        src/PathClassifier.cpp
+        src/PathClassifier.h
+    )
+    target_include_directories(PaneDeckClassificationTest PRIVATE src)
+    target_link_libraries(PaneDeckClassificationTest PRIVATE Qt6::Core)
+    add_test(NAME classification COMMAND PaneDeckClassificationTest)
+endif()
 
 

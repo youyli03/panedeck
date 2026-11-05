@@ -15,6 +15,8 @@ DashboardView::DashboardView(QWidget *parent)
     setWidgetResizable(true);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setFocusPolicy(Qt::NoFocus);
+    viewport()->setFocusPolicy(Qt::NoFocus);
     setStyleSheet(QStringLiteral("QScrollArea { background: #F3F3F3; }"));
     viewport()->setStyleSheet(QStringLiteral("background: #F3F3F3;"));
 
@@ -46,6 +48,20 @@ void DashboardView::setGroups(const QVector<WindowGroup> &groups)
 {
     const int previousScroll = verticalScrollBar()->value();
 
+    QWidget *previousFocus = focusWidget();
+    bool groupHadFocus = false;
+    QString focusedGroupKey;
+    for (GroupWidget *widget : m_groupWidgets)
+    {
+        if (previousFocus != nullptr
+            && (previousFocus == widget || widget->isAncestorOf(previousFocus)))
+        {
+            groupHadFocus = true;
+            focusedGroupKey = widget->applicationKey();
+            break;
+        }
+    }
+
     clearGroups();
 
     int leftHeight = 0;
@@ -57,6 +73,21 @@ void DashboardView::setGroups(const QVector<WindowGroup> &groups)
                                        m_container);
         connect(widget, &GroupWidget::windowActivated, this, &DashboardView::windowActivated);
         connect(widget, &GroupWidget::orderChanged, this, &DashboardView::orderChanged);
+        connect(widget, &GroupWidget::selectionChanged, this,
+                [this, widget](quintptr handle)
+                {
+                    // Only one window is "the current context" at a time.
+                    if (m_selectedWidget != nullptr && m_selectedWidget != widget)
+                    {
+                        m_selectedWidget->clearSelection();
+                    }
+                    m_selectedWidget = handle != 0 ? widget : nullptr;
+                    m_selectedHandle = static_cast<WId>(handle);
+                    if (handle != 0 && widget->hasFocus())
+                    {
+                        revealRow(widget);
+                    }
+                });
 
         const int groupHeight = widget->height() + 8;
         if (leftHeight <= rightHeight)
@@ -73,7 +104,119 @@ void DashboardView::setGroups(const QVector<WindowGroup> &groups)
         m_groupWidgets.append(widget);
     }
 
+    // Content changes (new folders appearing, titles changing) rebuild every
+    // row; keep the window the user was on selected, and keep the keyboard
+    // focus in the board, so context does not jump on a refresh.
+    GroupWidget *selectedWidget = nullptr;
+    if (m_selectedHandle != 0)
+    {
+        for (GroupWidget *widget : m_groupWidgets)
+        {
+            if (widget->selectByHandle(m_selectedHandle))
+            {
+                selectedWidget = widget;
+                break;
+            }
+        }
+
+        if (selectedWidget == nullptr)
+        {
+            m_selectedHandle = 0;
+            m_selectedWidget = nullptr;
+        }
+    }
+
+    if (groupHadFocus)
+    {
+        // Focus follows the group the user was in, not necessarily the group
+        // that still holds the selected row (e.g. after tabbing to a group).
+        GroupWidget *focusTarget = nullptr;
+        for (GroupWidget *widget : m_groupWidgets)
+        {
+            if (widget->applicationKey() == focusedGroupKey)
+            {
+                focusTarget = widget;
+                break;
+            }
+        }
+
+        if (focusTarget == nullptr)
+        {
+            focusTarget = selectedWidget;
+        }
+        if (focusTarget == nullptr && !m_groupWidgets.isEmpty())
+        {
+            focusTarget = m_groupWidgets.first();
+        }
+        if (focusTarget != nullptr)
+        {
+            focusTarget->setFocus(Qt::OtherFocusReason);
+        }
+    }
+
+    if (m_container->layout() != nullptr)
+    {
+        m_container->layout()->activate();
+    }
     verticalScrollBar()->setValue(previousScroll);
+
+    // Rows above may have shifted (or a group moved columns): keep the
+    // restored selection visible when the board owns the keyboard.
+    if (selectedWidget != nullptr && selectedWidget->hasFocus())
+    {
+        revealRow(selectedWidget);
+    }
+}
+
+void DashboardView::focusFirstGroup()
+{
+    if (!m_groupWidgets.isEmpty())
+    {
+        m_groupWidgets.first()->setFocus(Qt::OtherFocusReason);
+    }
+}
+
+void DashboardView::focusSelectedGroup()
+{
+    if (m_selectedHandle != 0)
+    {
+        for (GroupWidget *widget : m_groupWidgets)
+        {
+            if (widget->selectByHandle(m_selectedHandle))
+            {
+                widget->setFocus(Qt::OtherFocusReason);
+                revealRow(widget);
+                return;
+            }
+        }
+    }
+
+    focusFirstGroup();
+}
+
+void DashboardView::revealRow(GroupWidget *widget)
+{
+    const QRect row = widget->selectedRowRect();
+    if (row.isEmpty())
+    {
+        return;
+    }
+
+    const QPoint topLeft = widget->mapTo(m_container, row.topLeft());
+    const int margin = 6;
+    const int rowTop = topLeft.y();
+    const int rowBottom = rowTop + row.height();
+    const int visibleTop = verticalScrollBar()->value();
+    const int visibleBottom = visibleTop + viewport()->height();
+
+    if (rowTop < visibleTop + margin)
+    {
+        verticalScrollBar()->setValue(rowTop - margin);
+    }
+    else if (rowBottom > visibleBottom - margin)
+    {
+        verticalScrollBar()->setValue(rowBottom - viewport()->height() + margin);
+    }
 }
 
 void DashboardView::resizeEvent(QResizeEvent *event)
@@ -88,6 +231,7 @@ void DashboardView::resizeEvent(QResizeEvent *event)
 
 void DashboardView::clearGroups()
 {
+    m_selectedWidget = nullptr;
     for (GroupWidget *widget : m_groupWidgets)
     {
         m_leftColumn->removeWidget(widget);

@@ -26,6 +26,7 @@ public:
 
 protected:
     void showEvent(QShowEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     void refresh();
@@ -51,6 +52,7 @@ private:
     QVector<WindowGroup> m_groups;
     QString m_filterKey;
     QVector<QPushButton *> m_tabButtons;
+    QStringList m_tabSignature;
     bool m_refreshing = false;
     QElapsedTimer m_lastRefresh;
     QTimer *m_refreshTimer = nullptr;

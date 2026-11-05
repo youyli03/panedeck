@@ -28,6 +28,8 @@ public:
     explicit DashboardView(QWidget *parent = nullptr);
 
     void setGroups(const QVector<WindowGroup> &groups);
+    void focusFirstGroup();
+    void focusSelectedGroup();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -38,12 +40,15 @@ signals:
 
 private:
     void clearGroups();
+    void revealRow(GroupWidget *widget);
 
     QWidget *m_container = nullptr;
     QHBoxLayout *m_columns = nullptr;
     QVBoxLayout *m_leftColumn = nullptr;
     QVBoxLayout *m_rightColumn = nullptr;
     QVector<GroupWidget *> m_groupWidgets;
+    GroupWidget *m_selectedWidget = nullptr;
+    WId m_selectedHandle = 0;
 };
 
 

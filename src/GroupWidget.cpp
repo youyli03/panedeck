@@ -1,5 +1,7 @@
 ﻿#include "GroupWidget.h"
 
+#include <QApplication>
+#include <QFocusEvent>
 #include <QFontMetrics>
 #include <QHelpEvent>
 #include <QKeyEvent>
@@ -8,6 +10,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QStringList>
+#include <QTimer>
 
 #include <cstdlib>
 
@@ -15,6 +18,8 @@ namespace
 {
 constexpr int kHeaderHeight = 32;
 constexpr int kRowHeight = 24;
+constexpr int kSectionHeight = 20;
+constexpr int kDividerHeight = 12;
 constexpr int kRadius = 8;
 constexpr int kLeftPadding = 16;
 constexpr int kTextLeft = 40;
@@ -58,33 +63,71 @@ GroupWidget::GroupWidget(QString applicationKey, QString title, QIcon icon,
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 }
 
-int GroupWidget::heightForRows(int rows)
-{
-    return kHeaderHeight + rows * kRowHeight + 4;
-}
-
 void GroupWidget::rebuildLayout()
 {
     m_rowOffsets.resize(m_windows.size());
-    int y = kHeaderHeight;
+    m_sections.clear();
+    m_dividers.clear();
 
+    int y = kHeaderHeight;
     for (int row = 0; row < m_windows.size(); ++row)
     {
-        if (row > 0)
+        const WindowInfo &window = m_windows.at(row);
+        const bool startsSection = !window.sectionLabel.isEmpty()
+            && (row == 0 || window.sectionKey != m_windows.at(row - 1).sectionKey);
+
+        if (startsSection)
         {
-            const QString &current = m_windows.at(row).sectionKey;
-            const QString &previous = m_windows.at(row - 1).sectionKey;
-            if (!current.isEmpty() && !previous.isEmpty() && current != previous)
-            {
-                y += kRowHeight;
-            }
+            SectionHeader header;
+            header.y = y;
+            header.label = window.sectionLabel;
+            m_sections.append(header);
+            y += kSectionHeight;
         }
 
         m_rowOffsets[row] = y;
         y += kRowHeight;
+
+        // Close a related-path block before unrelated rows start, otherwise
+        // the section label looks like it also covers the rows below it.
+        const bool endsSection = !window.sectionKey.isEmpty()
+            && (row + 1 == m_windows.size() || m_windows.at(row + 1).sectionKey.isEmpty());
+        if (endsSection && row + 1 < m_windows.size())
+        {
+            m_dividers.append(y);
+            y += kDividerHeight;
+        }
     }
 
     setFixedHeight(y + 4);
+}
+
+bool GroupWidget::selectByHandle(quintptr handle)
+{
+    if (handle == 0)
+    {
+        return false;
+    }
+
+    for (int row = 0; row < m_windows.size(); ++row)
+    {
+        if (static_cast<quintptr>(m_windows.at(row).handle) == handle)
+        {
+            selectRow(row);
+            return true;
+        }
+    }
+    return false;
+}
+
+void GroupWidget::clearSelection()
+{
+    if (m_selectedRow < 0)
+    {
+        return;
+    }
+    m_selectedRow = -1;
+    update();
 }
 
 QString GroupWidget::applicationKey() const
@@ -101,6 +144,15 @@ QStringList GroupWidget::identityOrder() const
         order.append(window.identityKey);
     }
     return order;
+}
+
+QRect GroupWidget::selectedRowRect() const
+{
+    if (m_selectedRow < 0 || m_selectedRow >= m_rowOffsets.size())
+    {
+        return {};
+    }
+    return QRect(0, m_rowOffsets.at(m_selectedRow), width(), kRowHeight);
 }
 
 void GroupWidget::paintEvent(QPaintEvent *event)
@@ -143,6 +195,39 @@ void GroupWidget::paintEvent(QPaintEvent *event)
     painter.setPen(QPen(QColor(QStringLiteral("#F0F0F0")), 1.0));
     painter.drawLine(8, kHeaderHeight - 1, width() - 8, kHeaderHeight - 1);
 
+    // Related Explorer windows share a folder/case label once, so each row
+    // below only has to carry what makes it different.
+    for (const SectionHeader &section : m_sections)
+    {
+        const bool pathLabel = section.label.contains(QLatin1String(":\\"))
+            || section.label.startsWith(QLatin1String("\\\\"));
+        const QFont sectionFont = pathLabel ? pathFont() : titleFont(this, false);
+        painter.setFont(sectionFont);
+        painter.setPen(QColor(QStringLiteral("#8A8A8A")));
+
+        const QFontMetrics sectionMetrics(sectionFont);
+        const QString label = sectionMetrics.elidedText(section.label, Qt::ElideMiddle,
+                                                        width() - kTextLeft - 16);
+        const int labelWidth = sectionMetrics.horizontalAdvance(label);
+        painter.drawText(QRect(kTextLeft, section.y, labelWidth + 2, kSectionHeight),
+                         Qt::AlignVCenter | Qt::AlignLeft, label);
+
+        const int lineStart = kTextLeft + labelWidth + 8;
+        if (lineStart < width() - 16)
+        {
+            painter.setPen(QColor(QStringLiteral("#ECECEC")));
+            painter.drawLine(lineStart, section.y + kSectionHeight / 2,
+                             width() - 16, section.y + kSectionHeight / 2);
+        }
+    }
+
+    painter.setPen(QColor(QStringLiteral("#EDEDED")));
+    for (int divider : m_dividers)
+    {
+        const int lineY = divider + kDividerHeight / 2;
+        painter.drawLine(16, lineY, width() - 16, lineY);
+    }
+
     const QFont rowFont = titleFont(this, false);
     const QFont metricsPathFont = pathFont();
     const QFontMetrics rowMetrics(rowFont);
@@ -179,7 +264,7 @@ void GroupWidget::paintEvent(QPaintEvent *event)
         int titleWidth = available;
         QString titleText = window.title;
 
-        if (!window.path.isEmpty())
+        if (!window.pathLabel.isEmpty())
         {
             titleWidth = qMin(360, static_cast<int>(available * 0.55));
             titleText = elided(rowMetrics, window.title, titleWidth);
@@ -194,9 +279,10 @@ void GroupWidget::paintEvent(QPaintEvent *event)
             {
                 painter.setFont(metricsPathFont);
                 painter.setPen(QColor(QStringLiteral("#6B6B6B")));
+                // Keep the tail: the immediate parent disambiguates folders.
                 painter.drawText(QRect(pathX, rowY, pathWidth, kRowHeight),
                                  Qt::AlignVCenter | Qt::AlignLeft,
-                                 pathMetrics.elidedText(window.path, Qt::ElideMiddle, pathWidth));
+                                 pathMetrics.elidedText(window.pathLabel, Qt::ElideLeft, pathWidth));
             }
         }
         else
@@ -209,7 +295,13 @@ void GroupWidget::paintEvent(QPaintEvent *event)
 
     if (m_dragging && m_dropRow >= 0)
     {
-        const int lineY = m_rowOffsets.value(m_dropRow, kHeaderHeight + m_dropRow * kRowHeight);
+        int lineY = m_rowOffsets.value(m_dropRow, kHeaderHeight + m_dropRow * kRowHeight);
+        // QVector::move(from, to) inserts after removal, so a downward drag
+        // lands below the highlighted row: draw the line at that bottom edge.
+        if (m_pressRow >= 0 && m_dropRow > m_pressRow)
+        {
+            lineY += kRowHeight;
+        }
         painter.setPen(QPen(QColor(QStringLiteral("#B26B1F")), 2));
         painter.drawLine(12, lineY, width() - 12, lineY);
     }
@@ -234,8 +326,12 @@ void GroupWidget::selectRow(int row)
     {
         return;
     }
+
     m_selectedRow = row;
-    emit selectionChanged();
+    const quintptr handle = row >= 0 && row < m_windows.size()
+        ? static_cast<quintptr>(m_windows.at(row).handle)
+        : 0;
+    emit selectionChanged(handle);
     update();
 }
 
@@ -267,8 +363,24 @@ void GroupWidget::mouseMoveEvent(QMouseEvent *event)
     if ((event->buttons() & Qt::LeftButton) != 0 && m_pressRow >= 0
         && std::abs(event->pos().y() - m_pressY) > 5)
     {
+        // Reordering stays inside one related-path section: the section is
+        // derived from the folder path, so moving across it would not stick.
+        const QString key = m_windows.at(m_pressRow).sectionKey;
+        int sectionStart = m_pressRow;
+        while (sectionStart > 0 && m_windows.at(sectionStart - 1).sectionKey == key)
+        {
+            --sectionStart;
+        }
+        int sectionEnd = m_pressRow;
+        while (sectionEnd + 1 < m_windows.size()
+               && m_windows.at(sectionEnd + 1).sectionKey == key)
+        {
+            ++sectionEnd;
+        }
+
+        const int drop = row >= 0 ? qBound(sectionStart, row, sectionEnd) : m_pressRow;
         m_dragging = true;
-        m_dropRow = row >= 0 ? row : m_pressRow;
+        m_dropRow = drop;
         update();
         return;
     }
@@ -315,6 +427,23 @@ void GroupWidget::mouseDoubleClickEvent(QMouseEvent *event)
 
 bool GroupWidget::event(QEvent *event)
 {
+    if (event->type() == QEvent::UngrabMouse && m_dragging)
+    {
+        // A lost release (alt-tab, refresh, system dialog) must not leave a
+        // stale drop indicator behind. Defer so a normal release still wins.
+        QTimer::singleShot(0, this,
+                           [this]()
+                           {
+                               if (m_dragging && QApplication::mouseButtons() == Qt::NoButton)
+                               {
+                                   m_dragging = false;
+                                   m_dropRow = -1;
+                                   m_pressRow = -1;
+                                   update();
+                               }
+                           });
+    }
+
     if (event->type() == QEvent::ToolTip)
     {
         auto *helpEvent = static_cast<QHelpEvent *>(event);
@@ -322,12 +451,21 @@ bool GroupWidget::event(QEvent *event)
         if (row >= 0 && row < m_windows.size() && !m_windows.at(row).path.isEmpty())
         {
             QToolTip::showText(helpEvent->globalPos(), m_windows.at(row).path, this);
+            return true;
         }
-        else
+
+        for (const SectionHeader &section : m_sections)
         {
-            QToolTip::hideText();
-            event->ignore();
+            if (helpEvent->pos().y() >= section.y
+                && helpEvent->pos().y() < section.y + kSectionHeight)
+            {
+                QToolTip::showText(helpEvent->globalPos(), section.label, this);
+                return true;
+            }
         }
+
+        QToolTip::hideText();
+        event->ignore();
         return true;
     }
 
@@ -336,11 +474,52 @@ bool GroupWidget::event(QEvent *event)
 
 void GroupWidget::keyPressEvent(QKeyEvent *event)
 {
-    if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)
-        && m_selectedRow >= 0 && m_selectedRow < m_windows.size())
+    switch (event->key())
     {
-        emit windowActivated(static_cast<quintptr>(m_windows.at(m_selectedRow).handle));
+    case Qt::Key_Down:
+        if (!m_windows.isEmpty())
+        {
+            selectRow(qMin(m_selectedRow + 1, static_cast<int>(m_windows.size()) - 1));
+        }
         return;
+    case Qt::Key_Up:
+        if (!m_windows.isEmpty())
+        {
+            selectRow(m_selectedRow <= 0 ? 0 : m_selectedRow - 1);
+        }
+        return;
+    case Qt::Key_Home:
+        if (!m_windows.isEmpty())
+        {
+            selectRow(0);
+        }
+        return;
+    case Qt::Key_End:
+        if (!m_windows.isEmpty())
+        {
+            selectRow(m_windows.size() - 1);
+        }
+        return;
+    case Qt::Key_Escape:
+        if (m_dragging)
+        {
+            m_dragging = false;
+            m_dropRow = -1;
+            m_pressRow = -1;
+            update();
+            return;
+        }
+        break;
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+        if (m_selectedRow >= 0 && m_selectedRow < m_windows.size())
+        {
+            emit windowActivated(static_cast<quintptr>(m_windows.at(m_selectedRow).handle));
+            return;
+        }
+        break;
+    default:
+        break;
     }
 
     QWidget::keyPressEvent(event);
@@ -361,6 +540,7 @@ void GroupWidget::moveRow(int from, int to)
     }
 
     m_windows.move(from, to);
+    rebuildLayout();
     update();
 }
 
