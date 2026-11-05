@@ -9,7 +9,6 @@
 #include <QButtonGroup>
 #include <QHash>
 #include <QRegularExpression>
-#include <QSet>
 #include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
@@ -210,7 +209,7 @@ QString caseIdFromPath(const QString &path)
 
 QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows) const
 {
-    QHash<QString, QSet<QString>> caseFolders;
+    QHash<QString, int> caseCounts;
 
     for (const WindowInfo &window : windows)
     {
@@ -224,9 +223,7 @@ QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows)
         const QString caseId = caseIdFromPath(window.path);
         if (!caseId.isEmpty())
         {
-            QString normalized = window.path;
-            normalized.replace(QLatin1Char('/'), QLatin1Char('\\'));
-            caseFolders[caseId].insert(normalized.toLower());
+            caseCounts[caseId] += 1;
         }
     }
 
@@ -245,7 +242,7 @@ QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows)
         if (isExplorer && !window.path.isEmpty())
         {
             const QString caseId = caseIdFromPath(window.path);
-            if (!caseId.isEmpty() && caseFolders.value(caseId).size() > 1)
+            if (!caseId.isEmpty() && caseCounts.value(caseId) > 1)
             {
                 key = QStringLiteral("case:") + caseId;
                 title = caseId;
