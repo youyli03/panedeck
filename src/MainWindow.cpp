@@ -8,7 +8,6 @@
 #include <QApplication>
 #include <QButtonGroup>
 #include <QHash>
-#include <QRegularExpression>
 #include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
@@ -132,203 +131,12 @@ void MainWindow::refresh()
     m_refreshing = false;
 }
 
-namespace
-{
-bool isDigits(const QString &value)
-{
-    if (value.isEmpty())
-    {
-        return false;
-    }
-
-    for (const QChar character : value)
-    {
-        if (!character.isDigit())
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool looksLikeDateSegment(const QString &value)
-{
-    if (value.size() == 8)
-    {
-        const int year = value.left(4).toInt();
-        const int month = value.mid(4, 2).toInt();
-        const int day = value.mid(6, 2).toInt();
-        return year >= 1990 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31;
-    }
-
-    if (value.size() == 6)
-    {
-        const int year = value.left(4).toInt();
-        const int month = value.mid(4, 2).toInt();
-        return year >= 1990 && year <= 2100 && month >= 1 && month <= 12;
-    }
-
-    return false;
-}
-
-QString normalizedPath(const QString &path)
-{
-    QString normalized = path;
-    normalized.replace(QLatin1Char('/'), QLatin1Char('\\'));
-    return normalized.toLower();
-}
-
-QString caseIdFromPath(const QString &path)
-{
-    const QStringList segments = path.split(QRegularExpression(QStringLiteral("[\\\\/]")),
-                                            Qt::SkipEmptyParts);
-    QString best;
-    int bestScore = -1;
-
-    for (int index = 0; index < segments.size(); ++index)
-    {
-        const QString &segment = segments.at(index);
-        if (segment.size() < 6 || segment.size() > 8 || !isDigits(segment))
-        {
-            continue;
-        }
-
-        const bool parentIsCase = index > 0
-            && (segments.at(index - 1).compare(QStringLiteral("case"), Qt::CaseInsensitive) == 0
-                || segments.at(index - 1).compare(QStringLiteral("cases"), Qt::CaseInsensitive) == 0);
-
-        if (!parentIsCase && looksLikeDateSegment(segment))
-        {
-            continue;
-        }
-
-        const int score = (parentIsCase ? 1000 : 0) + segment.size() * 10 + (8 - index);
-        if (score > bestScore)
-        {
-            best = segment;
-            bestScore = score;
-        }
-    }
-
-    return best;
-}
-
-QString caseRootFromPath(const QString &path, const QString &caseId)
-{
-    const QString normalized = normalizedPath(path);
-    const QString marker = QStringLiteral("\\") + caseId.toLower();
-    int position = normalized.indexOf(marker);
-    while (position >= 0)
-    {
-        const int after = position + marker.size();
-        if (after == normalized.size() || normalized.at(after) == QLatin1Char('\\'))
-        {
-            return normalized.left(after);
-        }
-        position = normalized.indexOf(marker, position + 1);
-    }
-    return {};
-}
-
-bool sectionLess(const WindowInfo &left, const WindowInfo &right)
-{
-    if (left.sectionTitle != right.sectionTitle)
-    {
-        if (left.sectionTitle.isEmpty())
-        {
-            return false;
-        }
-        if (right.sectionTitle.isEmpty())
-        {
-            return true;
-        }
-
-        bool leftOk = false;
-        bool rightOk = false;
-        const qlonglong leftNumber = left.sectionTitle.toLongLong(&leftOk);
-        const qlonglong rightNumber = right.sectionTitle.toLongLong(&rightOk);
-        if (leftOk && rightOk && leftNumber != rightNumber)
-        {
-            return leftNumber < rightNumber;
-        }
-        return left.sectionTitle < right.sectionTitle;
-    }
-
-    return QString::localeAwareCompare(left.title, right.title) < 0;
-}
-}
-
 QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows) const
 {
-    struct CaseRoot
-    {
-        QString path;
-        QString caseId;
-    };
-
-    QVector<WindowInfo> entries;
-    entries.reserve(windows.size());
-    QVector<CaseRoot> roots;
-    QSet<QString> caseIds;
-
-    for (const WindowInfo &window : windows)
-    {
-        WindowInfo entry = window;
-        const bool isExplorer = window.className == QStringLiteral("CabinetWClass")
-            || window.className == QStringLiteral("ExploreWClass");
-        if (isExplorer && !window.path.isEmpty())
-        {
-            const QString caseId = caseIdFromPath(window.path);
-            if (!caseId.isEmpty())
-            {
-                entry.sectionTitle = caseId;
-                caseIds.insert(caseId);
-                const QString root = caseRootFromPath(window.path, caseId);
-                if (!root.isEmpty())
-                {
-                    roots.append({root, caseId});
-                }
-            }
-        }
-        entries.append(entry);
-    }
-
-    std::sort(roots.begin(), roots.end(),
-              [](const CaseRoot &left, const CaseRoot &right)
-              {
-                  return left.path.size() > right.path.size();
-              });
-
-    for (WindowInfo &entry : entries)
-    {
-        if (!entry.sectionTitle.isEmpty() || entry.path.isEmpty())
-        {
-            continue;
-        }
-
-        const bool isExplorer = entry.className == QStringLiteral("CabinetWClass")
-            || entry.className == QStringLiteral("ExploreWClass");
-        if (!isExplorer)
-        {
-            continue;
-        }
-
-        const QString normalized = normalizedPath(entry.path);
-        for (const CaseRoot &root : roots)
-        {
-            if (normalized == root.path
-                || normalized.startsWith(root.path + QLatin1Char('\\')))
-            {
-                entry.sectionTitle = root.caseId;
-                break;
-            }
-        }
-    }
-
     QVector<WindowGroup> groups;
     QHash<QString, int> indexByKey;
 
-    for (const WindowInfo &window : entries)
+    for (const WindowInfo &window : windows)
     {
         const QString key = window.executablePath.isEmpty()
             ? window.applicationName
@@ -346,12 +154,17 @@ QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows)
             iterator = indexByKey.find(key);
         }
 
-        groups[iterator.value()].windows.append(window);
+        WindowGroup &group = groups[iterator.value()];
+        group.windows.append(window);
     }
 
     for (WindowGroup &group : groups)
     {
-        std::sort(group.windows.begin(), group.windows.end(), sectionLess);
+        std::sort(group.windows.begin(), group.windows.end(),
+                  [](const WindowInfo &left, const WindowInfo &right)
+                  {
+                      return QString::localeAwareCompare(left.title, right.title) < 0;
+                  });
 
         const QStringList savedOrder = m_settings->windowOrder(group.key);
         if (!savedOrder.isEmpty())
@@ -362,34 +175,21 @@ QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows)
                 rank.insert(savedOrder.at(index), index);
             }
 
-            int start = 0;
-            while (start < group.windows.size())
-            {
-                int end = start + 1;
-                while (end < group.windows.size()
-                       && group.windows.at(end).sectionTitle == group.windows.at(start).sectionTitle)
-                {
-                    ++end;
-                }
-
-                std::stable_sort(group.windows.begin() + start, group.windows.begin() + end,
-                                 [&rank](const WindowInfo &left, const WindowInfo &right)
+            std::stable_sort(group.windows.begin(), group.windows.end(),
+                             [&rank](const WindowInfo &left, const WindowInfo &right)
+                             {
+                                 const int leftRank = rank.contains(left.identityKey)
+                                     ? rank.value(left.identityKey)
+                                     : INT_MAX;
+                                 const int rightRank = rank.contains(right.identityKey)
+                                     ? rank.value(right.identityKey)
+                                     : INT_MAX;
+                                 if (leftRank != rightRank)
                                  {
-                                     const int leftRank = rank.contains(left.identityKey)
-                                         ? rank.value(left.identityKey)
-                                         : INT_MAX;
-                                     const int rightRank = rank.contains(right.identityKey)
-                                         ? rank.value(right.identityKey)
-                                         : INT_MAX;
-                                     if (leftRank != rightRank)
-                                     {
-                                         return leftRank < rightRank;
-                                     }
-                                     return QString::localeAwareCompare(left.title, right.title) < 0;
-                                 });
-
-                start = end;
-            }
+                                     return leftRank < rightRank;
+                                 }
+                                 return QString::localeAwareCompare(left.title, right.title) < 0;
+                             });
         }
     }
 
@@ -518,6 +318,7 @@ void MainWindow::updateStatus(int windowCount, int appCount)
                               .arg(windowCount)
                               .arg(appCount));
 }
+
 
 
 

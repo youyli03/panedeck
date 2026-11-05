@@ -51,7 +51,7 @@ GroupWidget::GroupWidget(QString applicationKey, QString title, QIcon icon,
     , m_icon(std::move(icon))
     , m_windows(std::move(windows))
 {
-    rebuildLayout();
+    setFixedHeight(heightForRows(m_windows.size()));
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
     setCursor(Qt::ArrowCursor);
@@ -61,30 +61,6 @@ GroupWidget::GroupWidget(QString applicationKey, QString title, QIcon icon,
 int GroupWidget::heightForRows(int rows)
 {
     return kHeaderHeight + rows * kRowHeight + 4;
-}
-
-void GroupWidget::rebuildLayout()
-{
-    m_rowOffsets.resize(m_windows.size());
-    int y = kHeaderHeight;
-
-    for (int row = 0; row < m_windows.size(); ++row)
-    {
-        if (row > 0)
-        {
-            const QString &current = m_windows.at(row).sectionTitle;
-            const QString &previous = m_windows.at(row - 1).sectionTitle;
-            if (!current.isEmpty() && !previous.isEmpty() && current != previous)
-            {
-                y += kRowHeight;
-            }
-        }
-
-        m_rowOffsets[row] = y;
-        y += kRowHeight;
-    }
-
-    setFixedHeight(y + 4);
 }
 
 QString GroupWidget::applicationKey() const
@@ -151,7 +127,7 @@ void GroupWidget::paintEvent(QPaintEvent *event)
     for (int row = 0; row < m_windows.size(); ++row)
     {
         const WindowInfo &window = m_windows.at(row);
-        const int rowY = m_rowOffsets.value(row, kHeaderHeight + row * kRowHeight);
+        const int rowY = kHeaderHeight + row * kRowHeight;
         const QRectF rowRect(6, rowY + 1, width() - 12, kRowHeight - 2);
 
         if (row == m_selectedRow)
@@ -209,7 +185,7 @@ void GroupWidget::paintEvent(QPaintEvent *event)
 
     if (m_dragging && m_dropRow >= 0)
     {
-        const int lineY = m_rowOffsets.value(m_dropRow, kHeaderHeight + m_dropRow * kRowHeight);
+        const int lineY = kHeaderHeight + m_dropRow * kRowHeight;
         painter.setPen(QPen(QColor(QStringLiteral("#B26B1F")), 2));
         painter.drawLine(12, lineY, width() - 12, lineY);
     }
@@ -217,16 +193,17 @@ void GroupWidget::paintEvent(QPaintEvent *event)
 
 int GroupWidget::rowAt(const QPoint &position) const
 {
-    for (int row = 0; row < m_rowOffsets.size(); ++row)
+    if (position.y() < kHeaderHeight)
     {
-        const int top = m_rowOffsets.at(row);
-        if (position.y() >= top && position.y() < top + kRowHeight)
-        {
-            return row;
-        }
+        return -1;
     }
 
-    return -1;
+    const int row = (position.y() - kHeaderHeight) / kRowHeight;
+    if (row < 0 || row >= m_windows.size())
+    {
+        return -1;
+    }
+    return row;
 }
 
 void GroupWidget::selectRow(int row)
@@ -269,7 +246,7 @@ void GroupWidget::mouseMoveEvent(QMouseEvent *event)
         && std::abs(event->pos().y() - m_pressY) > 5)
     {
         m_dragging = true;
-        m_dropRow = row >= 0 ? row : m_pressRow;
+        m_dropRow = row >= 0 ? row : qBound(0, (event->pos().y() - kHeaderHeight) / kRowHeight, m_windows.size() - 1);
         update();
         return;
     }
@@ -364,6 +341,7 @@ void GroupWidget::moveRow(int from, int to)
     m_windows.move(from, to);
     update();
 }
+
 
 
 
