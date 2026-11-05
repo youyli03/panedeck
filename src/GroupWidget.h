@@ -40,6 +40,7 @@ protected:
 
 private:
     int rowAt(const QPoint &position) const;
+    void rebuildLayout();
     void selectRow(int row);
     void moveRow(int from, int to);
 
@@ -47,6 +48,7 @@ private:
     QString m_title;
     QIcon m_icon;
     QVector<WindowInfo> m_windows;
+    QVector<int> m_rowOffsets;
 
     int m_selectedRow = -1;
     int m_hoverRow = -1;

@@ -9,7 +9,7 @@ two-column board; double-click or press Enter to restore and raise a window.
 
 ## Features
 
-- One group per application; no categories. Explorer cases with more than one open window form a case group; single-window cases stay as normal rows.
+- One group per application; no categories. Explorer stays one group: repeated case numbers form case sections, remaining repeated path prefixes form prefix sections, and sections are separated by a blank row.
 - Top tabs: `All` plus applications with more than 10 windows.
 - Bordered group boxes; no scrollbar (overflow is clipped).
 - Taskbar icons, English static UI, light theme.
@@ -29,6 +29,7 @@ cmake --build build
 ```
 
 See [DESIGN.md](DESIGN.md).
+
 
 
 

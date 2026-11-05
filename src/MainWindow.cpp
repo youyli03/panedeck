@@ -171,6 +171,13 @@ bool looksLikeDateSegment(const QString &value)
     return false;
 }
 
+QString normalizedPath(const QString &path)
+{
+    QString normalized = path;
+    normalized.replace(QLatin1Char('/'), QLatin1Char('\\'));
+    return normalized;
+}
+
 QString caseIdFromPath(const QString &path)
 {
     const QStringList segments = path.split(QRegularExpression(QStringLiteral("[\\\\/]")),
@@ -205,17 +212,66 @@ QString caseIdFromPath(const QString &path)
 
     return best;
 }
+
+QString pathPrefix(const QString &path)
+{
+    const QString normalized = normalizedPath(path);
+    const QStringList segments = normalized.split(QLatin1Char('\\'), Qt::SkipEmptyParts);
+    if (segments.size() < 2)
+    {
+        return {};
+    }
+
+    QString prefix;
+    if (normalized.startsWith(QStringLiteral("\\\\")))
+    {
+        prefix = QStringLiteral("\\\\") + segments.at(0) + QLatin1Char('\\') + segments.at(1);
+        if (segments.size() >= 3)
+        {
+            prefix += QLatin1Char('\\') + segments.at(2);
+        }
+    }
+    else
+    {
+        prefix = segments.at(0) + QLatin1Char('\\') + segments.at(1);
+    }
+
+    return prefix.toLower();
+}
+
+bool sectionLess(const WindowInfo &left, const WindowInfo &right)
+{
+    if (left.sectionKey != right.sectionKey)
+    {
+        if (left.sectionKey.isEmpty())
+        {
+            return false;
+        }
+        if (right.sectionKey.isEmpty())
+        {
+            return true;
+        }
+        return left.sectionKey < right.sectionKey;
+    }
+
+    return QString::localeAwareCompare(left.title, right.title) < 0;
+}
 }
 
 QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows) const
 {
     QHash<QString, int> caseCounts;
+    QHash<QString, int> prefixCounts;
+
+    const auto isExplorer = [](const WindowInfo &window)
+    {
+        return window.className == QStringLiteral("CabinetWClass")
+            || window.className == QStringLiteral("ExploreWClass");
+    };
 
     for (const WindowInfo &window : windows)
     {
-        const bool isExplorer = window.className == QStringLiteral("CabinetWClass")
-            || window.className == QStringLiteral("ExploreWClass");
-        if (!isExplorer || window.path.isEmpty())
+        if (!isExplorer(window) || window.path.isEmpty())
         {
             continue;
         }
@@ -227,34 +283,68 @@ QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows)
         }
     }
 
-    QVector<WindowGroup> groups;
-    QHash<QString, int> indexByKey;
+    for (const WindowInfo &window : windows)
+    {
+        if (!isExplorer(window) || window.path.isEmpty())
+        {
+            continue;
+        }
+
+        const QString caseId = caseIdFromPath(window.path);
+        if (!caseId.isEmpty() && caseCounts.value(caseId) > 1)
+        {
+            continue;
+        }
+
+        const QString prefix = pathPrefix(window.path);
+        if (!prefix.isEmpty())
+        {
+            prefixCounts[prefix] += 1;
+        }
+    }
+
+    QVector<WindowInfo> entries;
+    entries.reserve(windows.size());
 
     for (const WindowInfo &window : windows)
     {
-        QString key = window.executablePath.isEmpty()
-            ? window.applicationName
-            : window.executablePath;
-        QString title = window.applicationName;
+        WindowInfo entry = window;
 
-        const bool isExplorer = window.className == QStringLiteral("CabinetWClass")
-            || window.className == QStringLiteral("ExploreWClass");
-        if (isExplorer && !window.path.isEmpty())
+        if (isExplorer(window) && !window.path.isEmpty())
         {
             const QString caseId = caseIdFromPath(window.path);
             if (!caseId.isEmpty() && caseCounts.value(caseId) > 1)
             {
-                key = QStringLiteral("case:") + caseId;
-                title = caseId;
+                entry.sectionKey = QStringLiteral("C") + caseId.rightJustified(8, QLatin1Char('0'));
+            }
+            else
+            {
+                const QString prefix = pathPrefix(window.path);
+                if (!prefix.isEmpty() && prefixCounts.value(prefix) > 1)
+                {
+                    entry.sectionKey = QStringLiteral("P") + prefix;
+                }
             }
         }
+
+        entries.append(entry);
+    }
+
+    QVector<WindowGroup> groups;
+    QHash<QString, int> indexByKey;
+
+    for (const WindowInfo &window : entries)
+    {
+        const QString key = window.executablePath.isEmpty()
+            ? window.applicationName
+            : window.executablePath;
 
         auto iterator = indexByKey.find(key);
         if (iterator == indexByKey.end())
         {
             WindowGroup group;
             group.key = key;
-            group.title = title;
+            group.title = window.applicationName;
             group.icon = window.icon;
             indexByKey.insert(key, groups.size());
             groups.append(group);
@@ -266,11 +356,7 @@ QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows)
 
     for (WindowGroup &group : groups)
     {
-        std::sort(group.windows.begin(), group.windows.end(),
-                  [](const WindowInfo &left, const WindowInfo &right)
-                  {
-                      return QString::localeAwareCompare(left.title, right.title) < 0;
-                  });
+        std::sort(group.windows.begin(), group.windows.end(), sectionLess);
 
         const QStringList savedOrder = m_settings->windowOrder(group.key);
         if (!savedOrder.isEmpty())
@@ -281,37 +367,40 @@ QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows)
                 rank.insert(savedOrder.at(index), index);
             }
 
-            std::stable_sort(group.windows.begin(), group.windows.end(),
-                             [&rank](const WindowInfo &left, const WindowInfo &right)
-                             {
-                                 const int leftRank = rank.contains(left.identityKey)
-                                     ? rank.value(left.identityKey)
-                                     : INT_MAX;
-                                 const int rightRank = rank.contains(right.identityKey)
-                                     ? rank.value(right.identityKey)
-                                     : INT_MAX;
-                                 if (leftRank != rightRank)
+            int start = 0;
+            while (start < group.windows.size())
+            {
+                int end = start + 1;
+                while (end < group.windows.size()
+                       && group.windows.at(end).sectionKey == group.windows.at(start).sectionKey)
+                {
+                    ++end;
+                }
+
+                std::stable_sort(group.windows.begin() + start, group.windows.begin() + end,
+                                 [&rank](const WindowInfo &left, const WindowInfo &right)
                                  {
-                                     return leftRank < rightRank;
-                                 }
-                                 return QString::localeAwareCompare(left.title, right.title) < 0;
-                             });
+                                     const int leftRank = rank.contains(left.identityKey)
+                                         ? rank.value(left.identityKey)
+                                         : INT_MAX;
+                                     const int rightRank = rank.contains(right.identityKey)
+                                         ? rank.value(right.identityKey)
+                                         : INT_MAX;
+                                     if (leftRank != rightRank)
+                                     {
+                                         return leftRank < rightRank;
+                                     }
+                                     return QString::localeAwareCompare(left.title, right.title) < 0;
+                                 });
+
+                start = end;
+            }
         }
     }
 
     std::sort(groups.begin(), groups.end(),
               [](const WindowGroup &left, const WindowGroup &right)
               {
-                  const bool leftCase = left.key.startsWith(QStringLiteral("case:"));
-                  const bool rightCase = right.key.startsWith(QStringLiteral("case:"));
-                  if (leftCase != rightCase)
-                  {
-                      return leftCase;
-                  }
-                  if (leftCase)
-                  {
-                      return left.title.toLongLong() < right.title.toLongLong();
-                  }
                   if (left.windows.size() != right.windows.size())
                   {
                       return left.windows.size() > right.windows.size();
@@ -321,6 +410,7 @@ QVector<WindowGroup> MainWindow::buildGroups(const QVector<WindowInfo> &windows)
 
     return groups;
 }
+
 void MainWindow::saveWindowOrder(const QVector<WindowGroup> &groups)
 {
     for (const WindowGroup &group : groups)
